@@ -46,18 +46,10 @@ GitHub 直链把 `cdn.jsdelivr.net/gh/z2004y/source@main/` 换成 `raw.githubuse
 - jar 为 **dex 格式**（内部 `classes.dex`），并含加载器必需的 `Proxy`；
 - 自行构建见 `java/BUILD.md`。
 
-## 国内网络（raw / jsDelivr 打不开时）
+## 网络说明
 
-部分网络对 `raw.githubusercontent.com` 与 `cdn.jsdelivr.net` 的 IPv6/Cloudflare 不可达（表现为配置能填、站点不出现）。
-此时用 gh-proxy 前缀访问，三处都要换：
-
-```
-Python 配置  https://gh-proxy.com/https://raw.githubusercontent.com/z2004y/source/main/python/kanju.json
-Java  配置  https://gh-proxy.com/https://raw.githubusercontent.com/z2004y/source/main/java/kanju_jar.json
-```
-
-- Python 配置里的 `api: ./kanju.py` 是相对路径，经 gh-proxy 解析后仍是同目录文件，无需改；
-- Java 配置里的 `spider` 已默认指向 gh-proxy，避免 jar 下载失败。
+配置与依赖全部使用 GitHub 原生地址（`raw.githubusercontent.com` / `cdn.jsdelivr.net`），**不内置第三方加速/代理前缀**。
+如果所在网络访问不了 GitHub，请改用自建镜像（把仓库镜像到自己的域名，替换配置里的域名即可），或调整本机网络环境。
 
 ## 接口与签名
 
