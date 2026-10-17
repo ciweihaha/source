@@ -142,6 +142,31 @@ public class Kanju extends Spider {
 
     @Override
     public String homeVideoContent() throws Exception {
+        // 优先站点自带 feed（多分区），失败退回分类首页
+        try {
+            Map<String, String> feed = new LinkedHashMap<>();
+            feed.put("scope", "public");
+            feed.put("mode", "preview");
+            feed.put("sections", "3");
+            feed.put("cards", "10");
+            JSONObject data = api("/v1/feed/home", feed, "GET", null);
+            JSONArray sections = data.optJSONArray("sections");
+            JSONArray all = new JSONArray();
+            if (sections != null) {
+                for (int i = 0; i < sections.length(); i++) {
+                    JSONObject section = sections.optJSONObject(i);
+                    JSONArray cs = section == null ? null : section.optJSONArray("cards");
+                    if (cs == null) continue;
+                    for (int j = 0; j < cs.length(); j++) all.put(cs.get(j));
+                }
+            }
+            if (all.length() > 0) {
+                JSONObject out = new JSONObject();
+                out.put("list", cards(all));
+                return out.toString();
+            }
+        } catch (Exception ignored) {
+        }
         try {
             Map<String, String> params = new LinkedHashMap<>();
             params.put("page", "1");
