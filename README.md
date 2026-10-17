@@ -103,3 +103,30 @@
 | kanju.json | drpy2.js + kanju.js | drpy2 系 App（影视仓/OK影视） |
 | kanju_jar.json | spider.jar + csp_Kanju | 标准 TVBox / CatVodSpider-PC |
 | dc_17源.json | 接口列表 | 合集/多接口源 |
+
+## Python 版（FongMi / 影视TV，kanju3.com）
+
+`kanju3.com` 与 kanju.ai 共用同一套 HMAC 签名方案与接口形态。这里给一份**不依赖 drpy2 / jar**
+的原生 Spider 实现（type 3 · Python），适用于影视TV / FongMi TV / OKTV 等带 Python(Chaquopy) 运行时的 App。
+
+| 文件 | 用途 |
+|---|---|
+| `kanju3.py` | 源本体：分类 / 筛选 / 搜索 / 详情 / 剧集 / 多线路播放 |
+| `kanju3.json` | 配置，`api` 为 `./kanju3.py`（相对配置文件位置解析） |
+
+配置地址（任选其一）：
+
+```
+https://raw.githubusercontent.com/z2004y/source/main/kanju3.json
+https://cdn.jsdelivr.net/gh/z2004y/source@main/kanju3.json
+```
+
+源码要点：
+
+- **签名密钥不写死**：启动时从站点 JS bundle 提取 key 与客户端版本号，6 小时缓存，站点换构建自动跟随；
+- **双通道传输**：有 `self.net` 走 App 网络，缺失时降级标准库 `urllib`（兼容不注入 net 的分支）；
+- **播放多级回退**：直链优先，`resolve://` 才二次解析，最多试 5 条线路；401 自动建匿名会话重试一次；
+- **可选配置**：`ext.line` 强制某条线路（如 `"1080P"`）、`ext.host` 换镜像（kanju1/4/9）。
+
+已验证：静态校验 / 真实响应回放 / 真机（Android 14 + OKTV 5.2.1，`/media` 返回 `state=3` 且播放进度正常前进）。
+
