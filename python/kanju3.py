@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
-"""看剧AI 源 · kanju3.com（配置见同仓库 kanju3.json）
-
-影视TV(FongMi/TV) 源 · 看剧AI (kanju3.com)
+"""影视TV(FongMi/TV) 源 · 看剧AI (kanju.ai)
 
 形态：type 3 · Python (Chaquopy)
-接口：https://kanju3.com/v1/*（客户端 HMAC 签名）
+接口：https://kanju.ai/v1/*（客户端 HMAC 签名）
 签名：HMAC-SHA256(key, "{METHOD}\n{path?query}\n{timestamp}\n{nonce}")
       头：x-ai-movie-timestamp / -nonce / -signature + x-ai-movie-client-*
 
@@ -35,7 +33,7 @@ from urllib.parse import urlencode
 
 from base.spider import Spider as BaseSpider
 
-DEFAULT_HOST = "https://kanju3.com"
+DEFAULT_HOST = "https://kanju.ai"
 UA = ("Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36")
 PAGE_LIMIT = 20
