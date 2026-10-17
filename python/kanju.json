@@ -1,0 +1,16 @@
+{
+  "sites": [
+    {
+      "key": "kanju",
+      "name": "看剧AI",
+      "type": 3,
+      "api": "./kanju.py",
+      "searchable": 1,
+      "quickSearch": 1,
+      "ext": {
+        "host": "https://kanju.ai",
+        "line": ""
+      }
+    }
+  ]
+}
