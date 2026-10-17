@@ -11,8 +11,8 @@
 source/
 ├─ README.md
 ├─ python/                     FongMi / 影视TV（type 3 · Python，Chaquopy）
-│  ├─ kanju3.py                源本体（签名密钥运行时提取）
-│  └─ kanju3.json              配置（api: ./kanju3.py）
+│  ├─ kanju.py                源本体（签名密钥运行时提取）
+│  └─ kanju.json              配置（api: ./kanju.py）
 └─ java/                       CatVodSpider（TVBox / FongMi，dex jar）
    ├─ spider.jar               含 csp_Kanju + Proxy
    ├─ spider.jar.md5           与 jar 对齐
@@ -26,7 +26,7 @@ source/
 
 | 版本 | 适用客户端 | 配置地址 |
 |---|---|---|
-| Python | FongMi 内核 + Chaquopy（影视TV / OKTV） | `https://cdn.jsdelivr.net/gh/z2004y/source@main/python/kanju3.json` |
+| Python | FongMi 内核 + Chaquopy（影视TV / OKTV） | `https://cdn.jsdelivr.net/gh/z2004y/source@main/python/kanju.json` |
 | Java | TVBox / CatVodSpider / FongMi（无需额外运行时） | `https://cdn.jsdelivr.net/gh/z2004y/source@main/java/kanju_jar.json` |
 
 GitHub 直链把 `cdn.jsdelivr.net/gh/z2004y/source@main/` 换成 `raw.githubusercontent.com/z2004y/source/main/` 即可。
@@ -52,11 +52,11 @@ GitHub 直链把 `cdn.jsdelivr.net/gh/z2004y/source@main/` 换成 `raw.githubuse
 此时用 gh-proxy 前缀访问，三处都要换：
 
 ```
-Python 配置  https://gh-proxy.com/https://raw.githubusercontent.com/z2004y/source/main/python/kanju3.json
+Python 配置  https://gh-proxy.com/https://raw.githubusercontent.com/z2004y/source/main/python/kanju.json
 Java  配置  https://gh-proxy.com/https://raw.githubusercontent.com/z2004y/source/main/java/kanju_jar.json
 ```
 
-- Python 配置里的 `api: ./kanju3.py` 是相对路径，经 gh-proxy 解析后仍是同目录文件，无需改；
+- Python 配置里的 `api: ./kanju.py` 是相对路径，经 gh-proxy 解析后仍是同目录文件，无需改；
 - Java 配置里的 `spider` 已默认指向 gh-proxy，避免 jar 下载失败。
 
 ## 接口与签名
