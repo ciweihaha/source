@@ -46,10 +46,20 @@ GitHub 直链把 `cdn.jsdelivr.net/gh/z2004y/source@main/` 换成 `raw.githubuse
 - jar 为 **dex 格式**（内部 `classes.dex`），并含加载器必需的 `Proxy`；
 - 自行构建见 `java/BUILD.md`。
 
-## 网络说明
+## 网络与自建镜像
 
-配置与依赖全部使用 GitHub 原生地址（`raw.githubusercontent.com` / `cdn.jsdelivr.net`），**不内置第三方加速/代理前缀**。
-如果所在网络访问不了 GitHub，请改用自建镜像（把仓库镜像到自己的域名，替换配置里的域名即可），或调整本机网络环境。
+仓库内配置只用 GitHub 原生地址，**不内置任何第三方加速/代理**。
+Java 配置的 `spider` 是相对路径 `./spider.jar`，Python 的 `api` 是 `./kanju.py`——都与配置文件同目录解析。
+
+因此自建镜像很简单：把对应目录（`java/` 或 `python/`）整个拷到自己的域名/对象存储/局域网，
+把 App 里的配置地址换成新地址即可，**文件内容一个字都不用改**。
+
+局域网自测：
+
+```bash
+cd java && python -m http.server 8000
+# App 配置地址填：http://<电脑IP>:8000/kanju_jar.json
+```
 
 ## 接口与签名
 
