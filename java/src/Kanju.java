@@ -28,7 +28,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
 /**
- * 看剧AI 源（kanju3.com）· Java Spider
+ * 看剧AI 源（kanju.ai）· Java Spider
  *
  * 接口：/v1/browse/catalog、/v1/catalog/{id}/detail|episodes、
  *       /v1/playback/resolve/{token}、/v1/playback/resolve-line
@@ -38,7 +38,7 @@ import javax.crypto.spec.SecretKeySpec;
  */
 public class Kanju extends Spider {
 
-    private static final String DEFAULT_HOST = "https://kanju3.com";
+    private static final String DEFAULT_HOST = "https://kanju.ai";
     private static final String UA =
             "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 "
                     + "(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
