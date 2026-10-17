@@ -2,13 +2,13 @@
   "sites": [
     {
       "key": "kanju3",
-      "name": "看剧AI(kanju3)",
+      "name": "看剧AI",
       "type": 3,
       "api": "./kanju3.py",
       "searchable": 1,
       "quickSearch": 1,
       "ext": {
-        "host": "https://kanju3.com",
+        "host": "https://kanju.ai",
         "line": ""
       }
     }
