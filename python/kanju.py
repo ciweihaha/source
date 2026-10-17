@@ -269,7 +269,18 @@ class Spider(BaseSpider):
         return result
 
     def homeVideoContent(self):
-        """首页推荐：取「全部」第一页，避免首屏空。"""
+        """首页推荐：优先站点自带 feed（多分区），失败退回分类首页。"""
+        try:
+            data = self._api("/v1/feed/home", {
+                "scope": "public", "mode": "preview", "sections": 3, "cards": 10,
+            })
+            cards = []
+            for section in data.get("sections") or []:
+                cards.extend(section.get("cards") or [])
+            if cards:
+                return {"list": self._cards(cards)}
+        except Exception:
+            pass
         try:
             data = self._api("/v1/browse/catalog", {"page": 1, "limit": PAGE_LIMIT})
             return {"list": self._cards(data.get("cards"))}
