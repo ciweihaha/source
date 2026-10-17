@@ -220,11 +220,12 @@ x-ai-movie-build-version  x-ai-movie-protocol-version
 | 更新 Java | `javac → d8 → jar → 更新 spider.jar.md5` |
 | 换域名 | 改两版默认 host + Python 配置 `ext.host` |
 
-本地自测：
+本地自测（不装 App）：
 
 ```bash
-# Python：真实网络跑一遍 home → category → detail → play
-python tools/record_responses.py python/kanju.py -o /tmp/responses.json
+cd python && python -m http.server 8000
+# 浏览器打开 http://127.0.0.1:8000/kanju.json 应返回配置 JSON
+# 再在 App 里用局域网地址加载，验证 首页 → 分类 → 详情 → 播放
 ```
 
 ---
