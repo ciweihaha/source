@@ -46,6 +46,19 @@ GitHub 直链把 `cdn.jsdelivr.net/gh/z2004y/source@main/` 换成 `raw.githubuse
 - jar 为 **dex 格式**（内部 `classes.dex`），并含加载器必需的 `Proxy`；
 - 自行构建见 `java/BUILD.md`。
 
+## 国内网络（raw / jsDelivr 打不开时）
+
+部分网络对 `raw.githubusercontent.com` 与 `cdn.jsdelivr.net` 的 IPv6/Cloudflare 不可达（表现为配置能填、站点不出现）。
+此时用 gh-proxy 前缀访问，三处都要换：
+
+```
+Python 配置  https://gh-proxy.com/https://raw.githubusercontent.com/z2004y/source/main/python/kanju3.json
+Java  配置  https://gh-proxy.com/https://raw.githubusercontent.com/z2004y/source/main/java/kanju_jar.json
+```
+
+- Python 配置里的 `api: ./kanju3.py` 是相对路径，经 gh-proxy 解析后仍是同目录文件，无需改；
+- Java 配置里的 `spider` 已默认指向 gh-proxy，避免 jar 下载失败。
+
 ## 接口与签名
 
 ```
