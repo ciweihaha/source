@@ -223,6 +223,11 @@ signature = HMAC-SHA256(key, canonical).hex()
 url = http://127.0.0.1:9978/m3u8.m3u8?url=…   ← App 自己的 HLS 代理，header 生效
 ```
 
+**发布后回测**：配置地址直接填仓库的 raw 链接
+（`https://raw.githubusercontent.com/z2004y/source/main/js/dongpian6.json`），
+在同一台模拟器上重测：8 分类全出 → 详情 8 集 → 播放 `state=3`，
+`position 7482 → 15513`（+8.0s / 8s）。即仓库里的产物本身是可用的，不是“本地能跑、发布后不行”。
+
 ---
 
 ## 常见问题
