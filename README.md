@@ -1,11 +1,19 @@
-# 看剧AI 视频源
+# 影视源（看剧AI · 懂片帝）
 
-面向 [kanju.ai](https://kanju.ai) 的视频源，提供 **Python / JS（QuickJS）/ Java** 三种实现，功能对齐：
+面向 [kanju.ai](https://kanju.ai) 与 [dongpian6.com](https://dongpian6.com) 的视频源，提供 **Python / JS（QuickJS）/ Java** 三种实现，功能对齐：
 分类、筛选、搜索、详情、剧集、多线路播放。
 
-- 站点域名：`https://kanju.ai`（同源 `kanju3.com`）
+- 站点：
+
+| 站点 | 域名 | 实现 |
+|---|---|---|
+| 看剧AI | `https://kanju.ai`（同源 `kanju3.com`） | Python / JS / Java |
+| 懂片帝 | `https://dongpian6.com` | JS（`js/dongpian6.js`） |
+
 - 配置路径：全部使用相对路径，便于自建镜像
 - 内容说明：仓库只含客户端代码与配置，不存储、不转码、不分发媒体文件
+
+> 两个站同一套 API 家族（同源 `/v1/*` + 客户端 HMAC 签名），差异见[两站差异](#两站差异)。
 
 ---
 
@@ -14,6 +22,7 @@
 - [特性](#特性)
 - [目录结构](#目录结构)
 - [快速开始](#快速开始)
+- [两站差异](#两站差异)
 - [配置字段](#配置字段)
 - [接口说明](#接口说明)
 - [签名机制](#签名机制)
@@ -47,8 +56,10 @@ source/
 │  ├─ kanju.py                 源本体（type 3）
 │  └─ kanju.json               配置（api: ./kanju.py）
 ├─ js/                         FongMi QuickJS（影视TV / OKTV，无需 Python）
-│  ├─ kanju.js                 源本体（双桥接 + 纯 JS HMAC）
-│  └─ kanju.json               配置（api: ./kanju.js）
+│  ├─ kanju.js                 看剧AI 源（双桥接 + 纯 JS HMAC）
+│  ├─ kanju.json               配置（api: ./kanju.js）
+│  ├─ dongpian6.js             懂片帝 源（双桥接 + 运行时取密钥 + 可达性校验）
+│  └─ dongpian6.json           配置（api: ./dongpian6.js）
 └─ java/                       TVBox / CatVodSpider / FongMi（dex jar）
    ├─ spider.jar               含 csp_Kanju + Proxy
    ├─ spider.jar.md5           与 jar 对齐
@@ -66,9 +77,10 @@ source/
 
 | 版本 | 地址 |
 |---|---|
-| Python | `https://raw.githubusercontent.com/z2004y/source/main/python/kanju.json` |
-| JS | `https://raw.githubusercontent.com/z2004y/source/main/js/kanju.json` |
-| Java | `https://raw.githubusercontent.com/z2004y/source/main/java/kanju_jar.json` |
+| Python（看剧AI） | `https://raw.githubusercontent.com/z2004y/source/main/python/kanju.json` |
+| JS（看剧AI） | `https://raw.githubusercontent.com/z2004y/source/main/js/kanju.json` |
+| JS（懂片帝） | `https://raw.githubusercontent.com/z2004y/source/main/js/dongpian6.json` |
+| Java（看剧AI） | `https://raw.githubusercontent.com/z2004y/source/main/java/kanju_jar.json` |
 
 ### Python
 
@@ -80,12 +92,13 @@ source/
 
 ### JS（QuickJS）
 
-同上步骤，站点名「看剧AI(JS)」。源码做过桥接适配：
+同上步骤，站点名「看剧AI(JS)」/「懂片帝(JS)」。源码做过桥接适配：
 
 - 官方桥接：`net.http(url, opts)`；
 - 部分分支（OKTV）：全局 `http(url, opts)`，且方法**必须返回 JSON 字符串**；
 - 启动时自动探测，两种都能跑；
-- 不使用并发 HTTP（该桥接会互相取消），详情/剧集串行请求。
+- 不使用并发 HTTP（该桥接会互相取消），详情/剧集串行请求；
+- 两个源都默认返回 JSON 字符串（只吃对象的分支给 `ext.json=false`）。
 
 ### Java
 
@@ -105,17 +118,38 @@ python -m http.server 8000
 
 ---
 
+## 两站差异
+
+同属一个 API 家族（`/v1/*` + HMAC 签名），以下是实测到的不一样的地方：
+
+| 维度 | 看剧AI | 懂片帝 |
+|---|---|---|
+| 签名密钥位置 | `assets/movie-card-runtime-*.js` | 同上（运行时正则提取，不落常量） |
+| `x-ai-movie-client-*` 头 | 服务端校验 | **实测不校验**（只验签名，不实现） |
+| 匿名会话 | 401 时建会话重试一次 | **实测不需要**（无 Cookie 逻辑） |
+| 剧集翻页 | `/episodes?limit=48&offset=` | 单次硬顶 **120**，用 `/episodes?limit=120&offset=` 补齐（实测 348 集可达） |
+| 线路 UI | 多线路（`$$$`） | **单线路**，集内自动选线（直链 m3u8 → mp4 → `resolve://`） |
+| 线路可用性 | 失败回退 5 条 | 回退前先探可达性（最多 4 条），全不可达才降级 `parse:1` |
+| 片头/片尾跳过 | — | 用站点 `playback_skip_settings_preset` + HLS `EXTINF` 总时长 |
+| 成功响应 | 不带 `msg` | 不带 `msg`（带了会被当错误并中止播放） |
+
+---
+
 ## 配置字段
 
 ### Python / JS（`python/kanju.json`、`js/kanju.json`）
 
 | 字段 | 说明 |
 |---|---|
-| `sites[].key` | `kanju`（JS 为 `kanju_js`） |
-| `sites[].api` | `./kanju.py` / `./kanju.js`（相对配置位置） |
-| `sites[].ext.host` | 站点根地址，默认 `https://kanju.ai` |
+| `sites[].key` | `kanju`（JS 为 `kanju_js`）/ `dongpian6_js` |
+| `sites[].api` | `./kanju.py` / `./kanju.js` / `./dongpian6.js`（相对配置位置） |
+| `sites[].ext.host` | 站点根地址，默认 `https://kanju.ai` / `https://dongpian6.com` |
 | `sites[].ext.line` | 强制线路名片段（如 `1080P`），留空=默认 |
 | `sites[].searchable` / `quickSearch` | `1` 启用 |
+| `dongpian6.ext.verify` | `false` = 关掉播放前可达性探测（省一次请求，但可能拿到失效线路） |
+| `dongpian6.ext.skips` / `skipIntro` / `skipOutro` | `false` = 关掉片头/片尾自动跳过（默认开） |
+| `dongpian6.ext.json` | 默认 `true`（返回 JSON 字符串）；只吃对象的分支设 `false` |
+| `dongpian6.ext.key` | 仅在自动提取签名密钥失效时手工指定（正常不需要） |
 
 ### Java（`java/kanju_jar.json`）
 
@@ -178,6 +212,16 @@ signature = HMAC-SHA256(key, canonical).hex()
 | Python | ✅ | ✅ 8 分类 | ✅ | ✅ `state=3` 进度前进 | jar 不需要 |
 | JS（QuickJS） | ✅ | ✅ 8 分类 | ✅ 7 集 | ✅ `state=3` +6022ms/6s | 双桥接自动适配 |
 | Java | ✅ | ✅ 8 分类 | ✅ | ✅ `state=3` +6035ms/6s | dex jar |
+| **懂片帝 JS** | ✅ | ✅ 8 分类 | ✅ 8 集 | ✅ `state=3` +8026ms/8s | 单集（电影）同步验过 |
+
+懂片帝 JS 的详细采样（`/media`，判据 `state=3` 且 `position` 前进）：
+
+```
+嫁金钗 第1集  duration=2890041  position 5941 → 13967   (+8.0s / 8s 墙钟 ≈ 1x)
+嫁金钗 第3集  duration=3218666  position 3652 → 9673    (+6.0s / 6s)
+丛林野人 正片  duration=4096083  position 12792
+url = http://127.0.0.1:9978/m3u8.m3u8?url=…   ← App 自己的 HLS 代理，header 生效
+```
 
 ---
 
@@ -193,6 +237,8 @@ signature = HMAC-SHA256(key, canonical).hex()
 | Java 报 `ClassNotFoundException: ...Proxy` | jar 缺 Proxy | 用仓库 jar |
 | Java 报 `Failed to open dex files` | jar 内是 `.class` 不是 `classes.dex` | 用仓库 jar（d8 生成） |
 | 选集黑屏 | 线路失效 / 地址过期 | 已做 5 条回退；可用 `ext.line` 指定 |
+| 懂片帝：首页空白但站点名正常 | 该分支要求业务方法返回 **JSON 字符串**，返回对象会被桥接吞掉（日志 `TypeAdapter IndexOutOfBounds`） | 仓库版本已统一 `JSON.stringify`；只吃对象的分支给 `ext.json=false` |
+| 懂片帝：有线路但不播放，播放器停在 idle | 成功响应里带了 `msg`，被当成错误提示从而中止播放 | 仓库版本成功时不带 `msg`，只在失败时带 |
 
 ---
 
@@ -205,6 +251,8 @@ signature = HMAC-SHA256(key, canonical).hex()
 | 改线路策略 | 改 `ordered/rank`（三版） |
 | 更新 Java | `javac → d8 → jar → 更新 spider.jar.md5` |
 | 换域名 | 三版默认 host + 配置 `ext.host` |
+| 懂片帝改版 | 改 `js/dongpian6.js`：密钥正则 `ensureConf()`、canonical `signHeaders()`、剧集上限 `EP_PAGE` |
+| 懂片帝换域名 | 改 `js/dongpian6.json` 的 `ext.host`（无需改代码） |
 
 ---
 

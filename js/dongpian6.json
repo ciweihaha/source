@@ -1,0 +1,16 @@
+{
+  "sites": [
+    {
+      "key": "dongpian6_js",
+      "name": "懂片帝(JS)",
+      "type": 3,
+      "api": "./dongpian6.js",
+      "searchable": 1,
+      "quickSearch": 1,
+      "ext": {
+        "host": "https://dongpian6.com",
+        "line": ""
+      }
+    }
+  ]
+}
