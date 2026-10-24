@@ -12,7 +12,6 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
-import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -44,6 +43,8 @@ public class Kanju extends Spider {
                     + "(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
     private static final int PAGE_LIMIT = 20;
     private static final int MAX_LINE_TRIES = 5;
+    private static final int MAX_REDIRECTS = 5;
+    private static final int MAX_EPISODE_PAGES = 50;
 
     private static final String[][] KINDS = {
             {"", "全部"}, {"movie", "电影"}, {"series", "剧集"}, {"short_drama", "短剧"},
@@ -230,7 +231,7 @@ public class Kanju extends Spider {
     @Override
     public String detailContent(List<String> ids) throws Exception {
         String vid = ids.get(0);
-        JSONObject detail = api("/v1/catalog/" + vid + "/detail", null, "GET", null);
+        JSONObject detail = api("/v1/catalog/" + pathEncode(vid) + "/detail", null, "GET", null);
         List<JSONObject> episodes = episodes(vid);
         if (episodes.isEmpty()) {
             throw new IllegalStateException("该片暂无可用集数");
@@ -271,18 +272,34 @@ public class Kanju extends Spider {
 
     private List<JSONObject> episodes(String vid) throws Exception {
         List<JSONObject> all = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
         int offset = 0;
+        int pages = 0;
         while (true) {
+            // 有界：最多 50 页（48 条/页），且 offset 必须前进、总量不超过服务端 episode_count；
+            // token 去重，避免服务端重复返回同一集时无限循环。
+            if (pages++ >= MAX_EPISODE_PAGES) break;
             Map<String, String> params = new LinkedHashMap<>();
             params.put("limit", "48");
             params.put("offset", String.valueOf(offset));
-            JSONObject data = api("/v1/catalog/" + vid + "/episodes", params, "GET", null);
+            JSONObject data = api("/v1/catalog/" + pathEncode(vid) + "/episodes", params, "GET", null);
             JSONArray batch = data.optJSONArray("episodes");
             if (batch == null || batch.length() == 0) break;
-            for (int i = 0; i < batch.length(); i++) all.add(batch.getJSONObject(i));
+            for (int i = 0; i < batch.length(); i++) {
+                JSONObject ep = batch.getJSONObject(i);
+                String tok = ep.optString("token", "");
+                if (!tok.isEmpty()) {
+                    if (!seen.add(tok)) continue;
+                }
+                all.add(ep);
+            }
             JSONObject pg = data.optJSONObject("episode_pagination");
             if (pg == null || !pg.optBoolean("has_more")) break;
-            offset = pg.optInt("offset", offset) + pg.optInt("returned_count", batch.length());
+            int total = data.optInt("episode_count", 0);
+            if (total > 0 && all.size() >= total) break;
+            int next = pg.optInt("offset", offset) + pg.optInt("returned_count", batch.length());
+            if (next <= offset) break;
+            offset = next;
         }
         return all;
     }
@@ -294,7 +311,7 @@ public class Kanju extends Spider {
         String ticket = id == null ? "" : id.trim();
         if (ticket.isEmpty()) return "{\"parse\":0,\"msg\":\"缺少播放标识\"}";
 
-        JSONObject resolved = api("/v1/playback/resolve/" + ticket,
+        JSONObject resolved = api("/v1/playback/resolve/" + pathEncode(ticket),
                 Collections.singletonMap("view", "compact"), "GET", null);
         JSONArray options = resolved.optJSONArray("line_options");
         List<JSONObject> usable = new ArrayList<>();
@@ -336,7 +353,8 @@ public class Kanju extends Spider {
                 }
                 return out.toString();
             } catch (Exception e) {
-                lastError = e.getMessage() == null ? "" : e.getMessage();
+                String msg = e.getMessage() == null ? "" : e.getMessage();
+                lastError = msg.length() > 80 ? msg.substring(0, 80) : msg;
             }
         }
         JSONObject fail = new JSONObject();
@@ -397,13 +415,12 @@ public class Kanju extends Spider {
             }
         }
         if (resp.code < 200 || resp.code >= 300) {
-            throw new IllegalStateException("HTTP " + resp.code + " @" + target + " "
-                    + resp.text.substring(0, Math.min(100, resp.text.length())));
+            throw new IllegalStateException("HTTP " + resp.code + " @" + redactPath(target));
         }
         try {
             return new JSONObject(resp.text);
         } catch (Exception e) {
-            throw new IllegalStateException("响应不是 JSON @" + target);
+            throw new IllegalStateException("响应不是 JSON @" + redactPath(target));
         }
     }
 
@@ -499,11 +516,60 @@ public class Kanju extends Spider {
     }
 
     private Resp request(String url, Map<String, String> headers, String method, String body) throws Exception {
+        // 只允许同 host 重定向：跨站重定向直接抛错，绝不把 Cookie 与签名头带到第三方。
+        // 注意：签名头绑定原始路径，同 host 跳转后签名对新路径失效属预期（服务端会 401，属 fail-closed）。
+        // 错误文本不含 URL：原始 URL 路径里可能含影片 id / 播放 token。
+        String current = url;
+        String curMethod = method;
+        String curBody = body;
+        for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
+            Raw raw = requestSingle(current, headers, curMethod, curBody);
+            int code = raw.code;
+            if (code != 301 && code != 302 && code != 303 && code != 307 && code != 308) {
+                return new Resp(code, raw.text);
+            }
+            if (raw.location == null || raw.location.isEmpty()) {
+                return new Resp(code, raw.text);
+            }
+            if (hop == MAX_REDIRECTS) {
+                throw new IllegalStateException("重定向次数超限");
+            }
+            URL next;
+            try {
+                next = new URL(new URL(current), raw.location);
+            } catch (Exception e) {
+                throw new IllegalStateException("重定向地址无效");
+            }
+            if (!next.getHost().equalsIgnoreCase(new URL(current).getHost())) {
+                throw new IllegalStateException("拒绝跨站重定向");
+            }
+            if (code == 303 || ((code == 301 || code == 302) && !"GET".equalsIgnoreCase(curMethod))) {
+                curMethod = "GET";
+                curBody = null;
+            }
+            current = next.toString();
+        }
+        throw new IllegalStateException("重定向次数超限");
+    }
+
+    private static final class Raw {
+        final int code;
+        final String text;
+        final String location;
+
+        Raw(int code, String text, String location) {
+            this.code = code;
+            this.text = text;
+            this.location = location;
+        }
+    }
+
+    private Raw requestSingle(String url, Map<String, String> headers, String method, String body) throws Exception {
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
         conn.setRequestMethod(method);
         conn.setConnectTimeout(15000);
         conn.setReadTimeout(20000);
-        conn.setInstanceFollowRedirects(true);
+        conn.setInstanceFollowRedirects(false);
         conn.setRequestProperty("Accept-Encoding", "identity");
         for (Map.Entry<String, String> e : headers.entrySet()) {
             conn.setRequestProperty(e.getKey(), e.getValue());
@@ -522,12 +588,13 @@ public class Kanju extends Spider {
         int code = conn.getResponseCode();
         InputStream is = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
         String text = readAll(is);
+        String location = conn.getHeaderField("Location");
         String setCookie = conn.getHeaderField("Set-Cookie");
         if (setCookie != null && !setCookie.isEmpty()) {
             cookie = setCookie.split(";")[0];
         }
         conn.disconnect();
-        return new Resp(code, text);
+        return new Raw(code, text, location);
     }
 
     private static String readAll(InputStream is) throws Exception {
@@ -628,6 +695,29 @@ public class Kanju extends Spider {
         return a == null || a.isEmpty() ? (b == null ? "" : b) : a;
     }
 
+    private static String pathEncode(String value) throws Exception {
+        // URLEncoder 按表单编码（空格→+），路径段里必须用 %20
+        return URLEncoder.encode(value, "UTF-8").replace("+", "%20");
+    }
+
+    // 错误文本用路径脱敏：去掉 query，非固定段折叠为 [id]，只保留接口名与状态码。
+    // 影片 id / 播放 token 本身就在路径里，原样写进报错会随日志外泄。
+    private static final java.util.Set<String> PATH_STATIC = new java.util.HashSet<>(
+            java.util.Arrays.asList("v1", "browse", "catalog", "detail", "episodes",
+                    "playback", "resolve", "resolve-line", "feed", "home", "users", "anonymous"));
+
+    private static String redactPath(String target) {
+        String path = target == null ? "" : target;
+        int q = path.indexOf('?');
+        if (q >= 0) path = path.substring(0, q);
+        StringBuilder out = new StringBuilder();
+        for (String part : path.split("/")) {
+            if (part.isEmpty()) continue;
+            out.append('/').append(PATH_STATIC.contains(part) ? part : "[id]");
+        }
+        return out.toString();
+    }
+
     private static String safe(String text) {
         String s = text == null ? "" : text.replace("$", "＄").replace("#", "＃").trim();
         return s.isEmpty() ? "正片" : s;
@@ -641,11 +731,4 @@ public class Kanju extends Spider {
         }
     }
 
-    private static String md5(String text) throws Exception {
-        MessageDigest md = MessageDigest.getInstance("MD5");
-        byte[] out = md.digest(text.getBytes("UTF-8"));
-        StringBuilder sb = new StringBuilder();
-        for (byte b : out) sb.append(String.format("%02x", b));
-        return sb.toString();
-    }
 }
