@@ -29,7 +29,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode, urljoin, urlparse
 
 from base.spider import Spider as BaseSpider
 
@@ -54,6 +54,41 @@ KINDS = [
 ]
 AREAS = ["大陆", "香港", "台湾", "日本", "韩国", "欧美"]
 
+# 错误文本里只保留接口名的固定路径段；其余段（影片 id / 播放 token）一律折叠。
+_PATH_STATIC_SEGMENTS = frozenset([
+    "v1", "browse", "catalog", "detail", "episodes",
+    "playback", "resolve", "resolve-line", "feed", "home",
+    "users", "anonymous",
+])
+
+
+def _redact_path(target):
+    """错误文本用路径：去掉 query，非固定段折叠为 [id]，只保留接口名与状态码。
+
+    影片 id / 播放 token 本身就在路径里，原样写进报错会随日志外泄。
+    """
+    path = str(target or "").split("?", 1)[0]
+    parts = [p if p in _PATH_STATIC_SEGMENTS else "[id]"
+             for p in path.split("/") if p]
+    return "/" + "/".join(parts)
+
+
+class _SameHostRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """只允许同 host 重定向。
+
+    urllib 默认会把请求头（含 Cookie 与签名头）原样带到重定向目标。
+    本处理器只放行同 host（含相对地址）重定向；跨站重定向返回原始 3xx
+    响应（上层按失败处理），绝不把 Cookie 与签名头带到第三方。
+    注意：App 注入的 self.net 路径重定向行为由宿主桥接控制，本处无法干预。
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        origin = urlparse(req.full_url)
+        dest = urlparse(urljoin(req.full_url, newurl))
+        if (dest.hostname or "").lower() != (origin.hostname or "").lower():
+            return None
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
 
 class Spider(BaseSpider):
     def init(self, extend=""):
@@ -70,7 +105,8 @@ class Spider(BaseSpider):
         self._sign = None
         self._jar = http.cookiejar.CookieJar()
         self._opener = urllib.request.build_opener(
-            urllib.request.HTTPCookieProcessor(self._jar)
+            urllib.request.HTTPCookieProcessor(self._jar),
+            _SameHostRedirectHandler(),
         )
         self._session_ready = False
 
@@ -156,11 +192,10 @@ class Spider(BaseSpider):
         if not js:
             raise RuntimeError("取不到站点脚本，无法初始化签名")
 
+        # 严格版：只接受签名上下文正则；无上下文的裸 64-hex 回退已删除，
+        # 取错密钥只会静默失败，不如直接报错。
         match = re.search(r'x-ai-movie-signature",[^;]{0,200}?"([0-9a-f]{64})"', js)
         key = match.group(1) if match else ""
-        if not key:
-            hexes = re.findall(r'"([0-9a-f]{64})"', js)
-            key = hexes[0] if hexes else ""
         if not key:
             raise RuntimeError("未找到签名密钥（站点可能改版）")
 
@@ -244,11 +279,11 @@ class Spider(BaseSpider):
                 code, content = self._http(self.host + target, headers, method, body)
 
         if not 200 <= code < 300:
-            raise RuntimeError("HTTP %s @ %s %s" % (code, target, str(content)[:120]))
+            raise RuntimeError("HTTP %s @ %s" % (code, _redact_path(target)))
         try:
             return json.loads(content)
         except Exception:
-            raise RuntimeError("响应不是 JSON @ %s" % target)
+            raise RuntimeError("响应不是 JSON @ %s" % _redact_path(target))
 
     # ───────────────────────────────── 分类
 
@@ -353,7 +388,7 @@ class Spider(BaseSpider):
 
     def detailContent(self, ids):
         vid = str(ids[0]).strip()
-        detail = self._api("/v1/catalog/%s/detail" % vid)
+        detail = self._api("/v1/catalog/%s/detail" % quote(vid, safe=""))
         episodes = self._episodes(vid)
         if not episodes:
             raise RuntimeError("该片暂无可用集数（可能未上线或需更高权限）")
@@ -388,7 +423,7 @@ class Spider(BaseSpider):
     def _episodes(self, vid):
         out, offset = [], 0
         while True:
-            data = self._api("/v1/catalog/%s/episodes" % vid, {"limit": 48, "offset": offset})
+            data = self._api("/v1/catalog/%s/episodes" % quote(vid, safe=""), {"limit": 48, "offset": offset})
             batch = data.get("episodes") or []
             out.extend(batch)
             pg = data.get("episode_pagination") or {}
@@ -406,7 +441,7 @@ class Spider(BaseSpider):
         if not ticket:
             return {"parse": 0, "msg": "缺少播放标识"}
 
-        resolved = self._api("/v1/playback/resolve/%s" % ticket, {"view": "compact"})
+        resolved = self._api("/v1/playback/resolve/%s" % quote(ticket, safe=""), {"view": "compact"})
         options = self._ordered_lines(resolved.get("line_options") or [])
         if not options:
             return {"parse": 0, "msg": "该集暂无可用线路"}
