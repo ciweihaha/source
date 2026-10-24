@@ -104,6 +104,9 @@ function hmacSha256Hex(key, msg) {
   return toHex(sha256Bytes(opad.concat(sha256Bytes(ipad.concat(utf8Bytes(msg))))));
 }
 
+// 注意：QuickJS 无 WebCrypto，注入桥接也不提供密码学随机源，Math.random 是唯一可用来源。
+// 影响有限：nonce 只是 HMAC 输入之一，签名安全性主要依赖密钥不泄露与时间戳/路径绑定；
+// 仅凭可预测的 nonce、没有密钥无法伪造请求。如宿主日后提供更强随机源，再替换此处。
 function nonceHex() {
   var s = "";
   var chars = "0123456789abcdef";
@@ -131,6 +134,8 @@ export default function createSpider(site) {
     }
   }
 
+  // 注意：重定向行为由宿主桥接（net.http / http）控制，脚本内无法禁用、也无法看到中间跳转。
+  // 若桥接跟随跨站重定向，本函数注入的 Cookie 可能被带到第三方；这是桥接层限制，脚本无法从内部封堵。
   // 统一请求：返回 Promise<{code, headers, content}>
   function call(url, headers, method, body) {
     var h = {};
@@ -241,12 +246,12 @@ export default function createSpider(site) {
           if (code === 401 && !isRetry && !sessionReady &&
               (text.indexOf("session") >= 0 || text.indexOf("login_required") >= 0)) {
             return ensureSession().then(function (ok) {
-              if (!ok) throw new Error("HTTP 401 @" + target + " " + text.slice(0, 90));
+              if (!ok) throw new Error("HTTP 401 @" + redactPath(target));
               return once(true);
             });
           }
-          if (code < 200 || code >= 300) throw new Error("HTTP " + code + " @" + target + " " + text.slice(0, 100));
-          try { return JSON.parse(text); } catch (err) { throw new Error("响应不是 JSON @" + target); }
+          if (code < 200 || code >= 300) throw new Error("HTTP " + code + " @" + redactPath(target));
+          try { return JSON.parse(text); } catch (err) { throw new Error("响应不是 JSON @" + redactPath(target)); }
         });
       }
       return once(false);
@@ -334,14 +339,28 @@ export default function createSpider(site) {
 
   function episodes(vid) {
     var all = [];
+    var seen = {};
+    var pages = 0;
     function step(offset) {
-      return api("/v1/catalog/" + vid + "/episodes", { limit: 48, offset: offset }, "GET", null)
+      // 有界：最多 50 页（48 条/页），且 offset 必须前进、总量不超过服务端 episode_count；
+      // token 去重，避免服务端重复返回同一集时无限循环。
+      if (pages >= 50) return Promise.resolve(all);
+      pages++;
+      return api("/v1/catalog/" + encodeURIComponent(vid) + "/episodes", { limit: 48, offset: offset }, "GET", null)
         .then(function (d) {
           var batch = d.episodes || [];
-          all = all.concat(batch);
+          batch.forEach(function (ep) {
+            var t = ep && ep.token;
+            if (t) { if (seen[t]) return; seen[t] = 1; }
+            all.push(ep);
+          });
           var pg = d.episode_pagination || {};
+          var total = Number(d.episode_count || 0);
           if (!pg.has_more || !batch.length) return all;
-          return step(Number(pg.offset || offset) + Number(pg.returned_count || batch.length));
+          if (total > 0 && all.length >= total) return all;
+          var next = Number(pg.offset || offset) + Number(pg.returned_count || batch.length);
+          if (next <= offset) return all;
+          return step(next);
         });
     }
     return step(0);
@@ -350,7 +369,7 @@ export default function createSpider(site) {
   function detail(id) {
     var vid = String(id);
     // 顺序请求：部分 QuickJS 桥接不支持并发 HTTP
-    return api("/v1/catalog/" + vid + "/detail", null, "GET", null).then(function (d) {
+    return api("/v1/catalog/" + encodeURIComponent(vid) + "/detail", null, "GET", null).then(function (d) {
       return episodes(vid).then(function (eps) { return [d, eps]; });
     }).then(function (res) {
       var d = res[0], eps = res[1] || [];
@@ -404,7 +423,7 @@ export default function createSpider(site) {
   function play(flag, id, vipFlags) {
     var ticket = String(id || "").trim();
     if (!ticket) return Promise.resolve(J({ parse: 0, msg: "缺少播放标识" }));
-    return api("/v1/playback/resolve/" + ticket, { view: "compact" }, "GET", null)
+    return api("/v1/playback/resolve/" + encodeURIComponent(ticket), { view: "compact" }, "GET", null)
       .then(function (d) {
         var options = (d.line_options || [])
           .filter(function (o) { return o && o.url && Number(o.minimum_user_level || 0) === 0; })
@@ -429,6 +448,17 @@ export default function createSpider(site) {
         }
         return next();
       });
+  }
+
+  // 错误文本用路径脱敏：去掉 query，非固定段折叠为 [id]，只保留接口名与状态码。
+  // 影片 id / 播放 token 本身就在路径里，原样写进报错会随日志外泄。
+  var PATH_STATIC = { v1: 1, browse: 1, catalog: 1, detail: 1, episodes: 1,
+    playback: 1, resolve: 1, "resolve-line": 1, feed: 1, home: 1, users: 1, anonymous: 1 };
+  function redactPath(target) {
+    var path = String(target || "").split("?")[0];
+    var parts = path.split("/").filter(function (p) { return p !== ""; })
+      .map(function (p) { return PATH_STATIC[p] ? p : "[id]"; });
+    return "/" + parts.join("/");
   }
 
   function safe(s) {

@@ -144,12 +144,26 @@ function qs(params) {
   return parts.join("&");
 }
 
+// 注意：QuickJS 无 WebCrypto，注入桥接也不提供密码学随机源，Math.random 是唯一可用来源。
+// 影响有限：nonce 只是 HMAC 输入之一，签名安全性主要依赖密钥不泄露与时间戳/路径绑定；
+// 仅凭可预测的 nonce、没有密钥无法伪造请求。如宿主日后提供更强随机源，再替换此处。
 function randomHex(n) {
   var s = "";
   while (s.length < n * 2) {
     s += Math.floor(Math.random() * 0x100000000).toString(16);
   }
   return s.slice(0, n * 2);
+}
+
+// 错误文本用路径脱敏：去掉 query，非固定段折叠为 [id]，只保留接口名与状态码。
+// 影片 id / 播放 token 本身就在路径里，原样写进报错会随日志外泄。
+var PATH_STATIC = { v1: 1, browse: 1, catalog: 1, detail: 1, episodes: 1,
+  playback: 1, resolve: 1, "resolve-line": 1, feed: 1, home: 1, users: 1, anonymous: 1 };
+function redactPath(target) {
+  var path = str(target).split("?")[0];
+  var parts = path.split("/").filter(function (p) { return p !== ""; })
+    .map(function (p) { return PATH_STATIC[p] ? p : "[id]"; });
+  return "/" + parts.join("/");
 }
 
 // 集数名里的分隔符要替换，避免污染播放串
@@ -186,7 +200,10 @@ function createSpider(site) {
     return RETURN_JSON ? JSON.stringify(o) : o;
   }
 
-  /* ── 网络：只用注入的 net/http，兼容「对象」与「JSON 字符串」两种返回 */
+  /* ── 网络：只用注入的 net/http，兼容「对象」与「JSON 字符串」两种返回
+     注意：重定向行为由宿主桥接控制，脚本内无法禁用、也无法看到中间跳转。
+     本文件无 Cookie 逻辑，重放面只剩签名头（且签名绑定原始路径，跨站后即失效），
+     属桥接层限制，脚本无法从内部封堵。 */
 
   async function call(url, options) {
     var res;
@@ -231,10 +248,18 @@ function createSpider(site) {
     var urls = [];
     var re = /(?:href|src)\s*=\s*["']([^"']*\/assets\/[A-Za-z0-9._\-\/]+\.js)["']/g;
     var m;
+    // 只抓本站同 host 的 bundle：绝对地址的第三方 bundle 直接丢弃。
+    // （本站相对地址以 host 补齐后天然同 host；裸相对地址保持原样、不做改写。）
+    var siteHost = (function () {
+      var hm = str(host).match(/^https?:\/\/([^\/:]+)/i);
+      return hm ? hm[1].toLowerCase() : "";
+    })();
     while ((m = re.exec(html)) !== null) {
       var u = m[1];
       if (u.indexOf("//") === 0) u = "https:" + u;
       else if (u.charAt(0) === "/") u = host + u;
+      var um = u.match(/^https?:\/\/([^\/:]+)/i);
+      if (um && um[1].toLowerCase() !== siteHost) continue;
       if (urls.indexOf(u) < 0) urls.push(u);
     }
     // 密钥通常在 runtime / main 这类包里，优先取，且限制抓取数量
@@ -266,7 +291,9 @@ function createSpider(site) {
       } catch (err) {
         continue;
       }
-      var m = js.match(/"([0-9a-f]{64})"\.trim\(\)/) || js.match(/"([0-9a-f]{64})"/);
+      // 严格版：只接受带 .trim() 上下文的密钥形态；无上下文的裸 64-hex 回退已删除，
+      // 取错密钥只会静默失败，不如直接报错（与 JS-kanju、Java 的严格版一致）。
+      var m = js.match(/"([0-9a-f]{64})"\.trim\(\)/);
       if (m && m[1]) {
         conf = { key: m[1], from: urls[i] };
         return conf;
@@ -289,25 +316,18 @@ function createSpider(site) {
   function errText(res, path) {
     var body = str(res.content);
     var code = "";
-    var msg = "";
     try {
       var j = JSON.parse(body);
       if (j && typeof j === "object") {
         var er = j.error;
-        if (er && typeof er === "object") {
-          code = str(er.code);
-          msg = str(er.message);
-        } else if (typeof er === "string") {
-          code = er;
-          msg = str(j.message);
-        } else {
-          code = str(j.code);
-          msg = str(j.message);
-        }
+        if (er && typeof er === "object") code = str(er.code);
+        else if (typeof er === "string") code = er;
+        else code = str(j.code);
       }
     } catch (err) { /* 非 JSON */ }
-    return "HTTP " + num(res.code) + " " + (code ? "[" + code + "] " : "") +
-      (msg ? msg + " " : "") + "@ " + path + (body ? " | " + body.slice(0, 120) : "");
+    // 只保留状态码与接口名：响应体片段与服务端 message 一律不进错误文本；
+    // 路径也要脱敏（播放 token 本身就在路径里），query 直接丢掉。
+    return "HTTP " + num(res.code) + " " + (code ? "[" + code + "] " : "") + "@ " + redactPath(path);
   }
 
   // pathWithQuery 形如 "/v1/browse/catalog?page=1&limit=20"；签名对它整体计算
@@ -337,7 +357,7 @@ function createSpider(site) {
     try {
       return JSON.parse(txt);
     } catch (err) {
-      throw new Error("响应不是 JSON @ " + pathWithQuery + " | " + txt.slice(0, 120));
+      throw new Error("响应不是 JSON @ " + redactPath(pathWithQuery));
     }
   }
 
@@ -647,6 +667,7 @@ function createSpider(site) {
     var hls = isHls(url);
     if (durCache[url] != null) return { ok: true, duration: durCache[url] };
     var headers = { "User-Agent": UA, "Referer": host + "/" };
+    // Range 是否生效取决于宿主桥接，脚本内无法验证；mp4 探活只依赖状态码，不依赖实际只读 1KB。
     if (!hls) headers.Range = "bytes=0-1023";
     var res;
     try {
@@ -661,9 +682,12 @@ function createSpider(site) {
     var duration = 0;
     if (hls) {
       if (txt.indexOf("#EXTM3U") < 0) return { ok: false, duration: 0, why: "不是 HLS 清单" };
+      // 清单只扫描前 512KB：桥接已把全文交给脚本，截断省的是正则扫描时间而非桥接内存；
+      // 超限时 duration 为下界估计，片尾跳过仍受 duration > outro + 60 保护，不会多跳。
+      var scan = txt.length > 512 * 1024 ? txt.slice(0, 512 * 1024) : txt;
       var re = /#EXTINF:\s*([0-9.]+)/g;
       var m;
-      while ((m = re.exec(txt)) !== null) duration += num(m[1]);
+      while ((m = re.exec(scan)) !== null) duration += num(m[1]);
       durCache[url] = duration;
     }
     return { ok: true, duration: duration };
@@ -704,7 +728,7 @@ function createSpider(site) {
         if (url.indexOf("resolve://") === 0) {
           url = await resolveLine(url.slice("resolve://".length).trim());
         }
-        if (!/^https?:\/\//i.test(url)) throw new Error("线路地址不是 http(s)：" + url.slice(0, 60));
+        if (!/^https?:\/\//i.test(url)) throw new Error("线路地址不是 http(s)");
 
         var probe = { ok: true, duration: 0 };
         if (verify) {
@@ -729,7 +753,8 @@ function createSpider(site) {
         if (skips) res1.skips = skips;
         return ret(res1);
       } catch (err) {
-        lastErr = str(l.provider_id) + ":" + (err && err.message ? err.message : str(err));
+        var em = err && err.message ? err.message : str(err);
+        lastErr = str(l.provider_id) + ":" + str(em).slice(0, 80);
       }
     }
 
