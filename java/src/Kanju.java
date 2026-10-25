@@ -516,8 +516,8 @@ public class Kanju extends Spider {
     }
 
     private Resp request(String url, Map<String, String> headers, String method, String body) throws Exception {
-        // 只允许同 host 重定向：跨站重定向直接抛错，绝不把 Cookie 与签名头带到第三方。
-        // 注意：签名头绑定原始路径，同 host 跳转后签名对新路径失效属预期（服务端会 401，属 fail-closed）。
+        // 只允许同 (scheme, host, port) 三元组重定向：跨站 / 跨端口 / 降级重定向直接抛错，绝不把 Cookie 与签名头带到第三方。跨端口默认拒绝，确需放行时须登记 allowlist（当前 allowlist 为空）。
+        // 注意：签名头绑定原始路径，同三元组跳转后签名对新路径失效属预期（服务端会 401，属 fail-closed）。
         // 错误文本不含 URL：原始 URL 路径里可能含影片 id / 播放 token。
         String current = url;
         String curMethod = method;
@@ -540,8 +540,8 @@ public class Kanju extends Spider {
             } catch (Exception e) {
                 throw new IllegalStateException("重定向地址无效");
             }
-            if (!next.getHost().equalsIgnoreCase(new URL(current).getHost())) {
-                throw new IllegalStateException("拒绝跨站重定向");
+            if (!next.getProtocol().equalsIgnoreCase(new URL(current).getProtocol()) || !next.getHost().equalsIgnoreCase(new URL(current).getHost()) || (next.getPort() != -1 ? next.getPort() : ("https".equalsIgnoreCase(next.getProtocol()) ? 443 : 80)) != (new URL(current).getPort() != -1 ? new URL(current).getPort() : ("https".equalsIgnoreCase(new URL(current).getProtocol()) ? 443 : 80))) {
+                throw new IllegalStateException("拒绝跨站 / 跨端口 / 降级重定向");
             }
             if (code == 303 || ((code == 301 || code == 302) && !"GET".equalsIgnoreCase(curMethod))) {
                 curMethod = "GET";
