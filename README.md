@@ -29,6 +29,7 @@
 - [验证记录](#验证记录)
 - [常见问题](#常见问题)
 - [维护与更新](#维护与更新)
+- [重定向与桥接限制](#重定向与桥接限制)
 - [免责](#免责)
 
 ---
@@ -73,14 +74,14 @@ source/
 
 ## 快速开始
 
-配置地址（任选其一，可换成自建镜像）：
+配置地址（任选其一，可换成自建镜像）：以下地址均为本 Fork，upstream 地址仅作来源对照。
 
 | 版本 | 地址 |
 |---|---|
-| Python（看剧AI） | `https://raw.githubusercontent.com/z2004y/source/main/python/kanju.json` |
-| JS（看剧AI） | `https://raw.githubusercontent.com/z2004y/source/main/js/kanju.json` |
-| JS（懂片帝） | `https://raw.githubusercontent.com/z2004y/source/main/js/dongpian6.json` |
-| Java（看剧AI） | `https://raw.githubusercontent.com/z2004y/source/main/java/kanju_jar.json` |
+| Python（看剧AI） | `https://raw.githubusercontent.com/ciweihaha/source/main/python/kanju.json` |
+| JS（看剧AI） | `https://raw.githubusercontent.com/ciweihaha/source/main/js/kanju.json` |
+| JS（懂片帝） | `https://raw.githubusercontent.com/ciweihaha/source/main/js/dongpian6.json` |
+| Java（看剧AI） | `https://raw.githubusercontent.com/ciweihaha/source/main/java/kanju_jar.json` |
 
 ### Python
 
@@ -224,7 +225,7 @@ url = http://127.0.0.1:9978/m3u8.m3u8?url=…   ← App 自己的 HLS 代理，h
 ```
 
 **发布后回测**：配置地址直接填仓库的 raw 链接
-（`https://raw.githubusercontent.com/z2004y/source/main/js/dongpian6.json`），
+（`https://raw.githubusercontent.com/ciweihaha/source/main/js/dongpian6.json`），
 在同一台模拟器上重测：8 分类全出 → 详情 8 集 → 播放 `state=3`，
 `position 7482 → 15513`（+8.0s / 8s）。即仓库里的产物本身是可用的，不是“本地能跑、发布后不行”。
 
@@ -254,13 +255,22 @@ url = http://127.0.0.1:9978/m3u8.m3u8?url=…   ← App 自己的 HLS 代理，h
 | 站点改签名 | 改 `canonical` 与密钥正则（三版同名逻辑） |
 | 新增分类 | 改 `KINDS`（三版） |
 | 改线路策略 | 改 `ordered/rank`（三版） |
-| 更新 Java | `javac → d8 → jar → 更新 spider.jar.md5` |
+| 更新 Java | `javac → d8 → jar → 更新 spider.jar.md5 与 spider.jar.sha256（发布时附 SHA-256 值；校验文件与 jar 同仓只能防传输损坏，不能防仓库本身被写）` |
 | 换域名 | 三版默认 host + 配置 `ext.host` |
 | 懂片帝改版 | 改 `js/dongpian6.js`：密钥正则 `ensureConf()`、canonical `signHeaders()`、剧集上限 `EP_PAGE` |
 | 懂片帝换域名 | 改 `js/dongpian6.json` 的 `ext.host`（无需改代码） |
 
 ---
 
+## 重定向与桥接限制
+
+跨站重定向时，Cookie 与签名头可能被宿主桥接带到第三方：Python 版的 `self.net` 与 JS 版的宿主桥接路径由宿主控制，本仓库无法在该路径上剥离敏感头或阻止跟随。缓解靠宿主升级，或由服务端拒绝跨站重定向。
+
+Python 自有 urllib 重定向校验与 Java 自有重定向校验已收紧为同 (scheme, hostname, port) 三元组，但该收紧只覆盖自有路径，不覆盖 `self.net` / JS 桥接路径。宿主桥接的实际跟随与剥离行为未经实测。
+
+---
 ## 免责
 
 代码仅用于个人学习与自建源调试。内容版权归原站点与权利人所有，本仓库不存储、不转码、不分发任何媒体文件。
+
+来源说明：本仓库 fork 自 upstream（z2004y/source）。已按旧文档配置 upstream 地址的用户不会自动迁移，需手动改用本 Fork 的配置地址（见快速开始）。

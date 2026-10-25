@@ -67,25 +67,25 @@ def _redact_path(target):
 
     影片 id / 播放 token 本身就在路径里，原样写进报错会随日志外泄。
     """
-    path = str(target or "").split("?", 1)[0]
+    path = (urlparse(str(target or "")).path if "://" in str(target or "") else str(target or "").split("?", 1)[0])
     parts = [p if p in _PATH_STATIC_SEGMENTS else "[id]"
              for p in path.split("/") if p]
     return "/" + "/".join(parts)
 
 
 class _SameHostRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """只允许同 host 重定向。
+    """只允许同 (scheme, hostname, port) 三元组重定向。
 
     urllib 默认会把请求头（含 Cookie 与签名头）原样带到重定向目标。
-    本处理器只放行同 host（含相对地址）重定向；跨站重定向返回原始 3xx
+    本处理器只放行同三元组（含相对地址）重定向；跨站重定向返回原始 3xx
     响应（上层按失败处理），绝不把 Cookie 与签名头带到第三方。
-    注意：App 注入的 self.net 路径重定向行为由宿主桥接控制，本处无法干预。
+    注意：App 注入的 self.net 路径重定向行为由宿主桥接控制，本处无法干预；urllib 同站内方法语义：303 转 GET，301/302/307 保持方法与 body，308 随 CPython 版本而异。跨端口默认拒绝，确需放行时须在比较条件中登记 allowlist（当前 allowlist 为空）。
     """
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         origin = urlparse(req.full_url)
         dest = urlparse(urljoin(req.full_url, newurl))
-        if (dest.hostname or "").lower() != (origin.hostname or "").lower():
+        if (dest.scheme or "").lower() != (origin.scheme or "").lower() or (dest.hostname or "").lower() != (origin.hostname or "").lower() or (int(dest.netloc.rsplit(":", 1)[1]) if ":" in dest.netloc and dest.netloc.rsplit(":", 1)[1].isdigit() else (443 if (dest.scheme or "").lower() == "https" else 80)) != (int(origin.netloc.rsplit(":", 1)[1]) if ":" in origin.netloc and origin.netloc.rsplit(":", 1)[1].isdigit() else (443 if (origin.scheme or "").lower() == "https" else 80)):
             return None
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
@@ -142,7 +142,7 @@ class Spider(BaseSpider):
                 options["body"] = body
             res = net.req(url, options)
             if res.get("error"):
-                raise RuntimeError("网络错误 %s: %s" % (url, res["error"]))
+                raise RuntimeError("网络错误 %s: %s" % (_redact_path(url), re.sub(r"[A-Za-z0-9_-]{16,}", "[token]", re.sub(r"[?][^ ]*", "", re.sub(r"https?://[^ ]+", lambda m: _redact_path(m.group(0)), str(res["error"]))))))
             return int(res.get("code") or 0), str(res.get("content") or "")
 
         data = body.encode("utf-8") if isinstance(body, str) else body

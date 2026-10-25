@@ -160,7 +160,7 @@ function randomHex(n) {
 var PATH_STATIC = { v1: 1, browse: 1, catalog: 1, detail: 1, episodes: 1,
   playback: 1, resolve: 1, "resolve-line": 1, feed: 1, home: 1, users: 1, anonymous: 1 };
 function redactPath(target) {
-  var path = str(target).split("?")[0];
+  var raw = str(target); var path = raw; if (raw.indexOf("://") >= 0) { path = raw.slice(raw.indexOf("://") + 3); path = path.indexOf("/") >= 0 ? path.slice(path.indexOf("/")) : "/"; } path = path.split("?")[0];
   var parts = path.split("/").filter(function (p) { return p !== ""; })
     .map(function (p) { return PATH_STATIC[p] ? p : "[id]"; });
   return "/" + parts.join("/");
@@ -237,7 +237,7 @@ function createSpider(site) {
     var res = await call(url, { headers: baseHeaders(), timeout: 20000 });
     var code = num(res.code);
     if (code && (code < 200 || code >= 300)) {
-      throw new Error("HTTP " + code + " @ " + url);
+      throw new Error("HTTP " + code + " @ " + redactPath(url));
     }
     return str(res.content);
   }
@@ -353,7 +353,7 @@ function createSpider(site) {
     }
     if (code && (code < 200 || code >= 300)) throw new Error(errText(res, pathWithQuery));
     var txt = str(res.content);
-    if (!txt) throw new Error("空响应 @ " + pathWithQuery);
+    if (!txt) throw new Error("空响应 @ " + redactPath(pathWithQuery));
     try {
       return JSON.parse(txt);
     } catch (err) {
@@ -517,7 +517,7 @@ function createSpider(site) {
       var st = arr(j.source_statuses);
       for (var i = 0; i < st.length; i++) {
         if (str(st[i].status) === "failed") {
-          throw new Error("数据源失败：" + str(st[i].message) + " @ " + path);
+          throw new Error("数据源失败：" + str(st[i].message) + " @ " + redactPath(path));
         }
       }
     }
@@ -596,7 +596,7 @@ function createSpider(site) {
     var pieces = [];
     for (k = 0; k < eps.length; k++) pieces.push(eps[k].name + "$" + eps[k].token);
     var playUrl = pieces.join("#");
-    if (!playUrl) throw new Error("详情没有剧集（token 为空）@ " + base);
+    if (!playUrl) throw new Error("详情没有剧集（token 为空）@ " + redactPath(base));
 
     var genres = arr(j.genres).join(" ");
     var actors = arr(j.actors).join(" ");
