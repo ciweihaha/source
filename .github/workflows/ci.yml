@@ -1,0 +1,73 @@
+# 最小 CI（SRC-07）：仅构建与校验。
+# 步骤：checkout -> JDK -> 按 java/BUILD.md 编译 -> d8 -> 打包 -> sha256sum -c，
+# 并运行 tests/ 下的 Python / JS mock 用例。
+# 构建产物放在隔离目录 build/ci，不覆盖、不提交仓内 java/spider.jar。
+# 本文件未在有 Android SDK 的环境中实测通过，CI 绿与本地复现均待验证。
+# 若运行器上没有预装 Android SDK，需先安装（例如用 android-actions/setup-android 类
+# Action 并钉完整 SHA）；本文件只用了一个 Action，见下。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      # 唯一 Action：actions/checkout v4.2.2，钉完整 SHA（已在 GitHub 上核对）。
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: 运行 Python mock 用例
+        run: python3 tests/python/test_kanju.py
+
+      - name: 运行 JS mock 用例
+        run: node tests/js/test_dongpian6_redact.js
+
+      - name: 定位 JDK 与 Android SDK
+        run: |
+          set -euo pipefail
+          # 运行器预装 JDK 优先用 JAVA_HOME_17_X64；没有则用默认 java。
+          if [ -n "${JAVA_HOME_17_X64:-}" ] && [ -d "$JAVA_HOME_17_X64" ]; then
+            export JAVA_HOME="$JAVA_HOME_17_X64"
+            export PATH="$JAVA_HOME/bin:$PATH"
+          fi
+          java -version
+          javac -version
+          # android.jar：优先 platforms/android-36/android.jar（BUILD.md 口径），
+          # 不存在时回退到 platforms/android-*/android.jar 的最新版并打印实际版本。
+          if [ -f "$ANDROID_HOME/platforms/android-36/android.jar" ]; then
+            ANDROID_JAR="$ANDROID_HOME/platforms/android-36/android.jar"
+          else
+            ANDROID_JAR="$(ls "$ANDROID_HOME"/platforms/android-*/android.jar | sort -V | tail -n 1)"
+          fi
+          echo "ANDROID_JAR=$ANDROID_JAR" >> "$GITHUB_ENV"
+          echo "使用 android.jar：$ANDROID_JAR"
+          # d8：取 build-tools/*/d8 中排序后最后一个。
+          D8="$(ls "$ANDROID_HOME"/build-tools/*/d8 | sort -V | tail -n 1)"
+          echo "D8=$D8" >> "$GITHUB_ENV"
+          echo "使用 d8：$D8"
+
+      - name: 按 BUILD.md 编译并打包（隔离目录，不动仓内 spider.jar）
+        run: |
+          set -euo pipefail
+          mkdir -p build/ci/stubs build/ci/out build/ci/dexout
+          # 步骤 1：编译桩（仅编译期，不打进 jar）。
+          javac -source 8 -target 8 -classpath "$ANDROID_JAR" \
+            -d build/ci/stubs java/stubs/com/github/catvod/crawler/Spider.java
+          # 步骤 2：编译爬虫（Unix 分隔符 :；源码路径按仓内实际布局）。
+          javac -source 8 -target 8 -encoding UTF-8 \
+            -classpath "$ANDROID_JAR:build/ci/stubs" \
+            -d build/ci/out java/src/Kanju.java java/src/Proxy.java
+          # 步骤 3：d8 转 dex。
+          "$D8" --release --min-api 23 \
+            --lib "$ANDROID_JAR" --lib build/ci/stubs \
+            --output build/ci/dexout $(find build/ci/out -name '*.class')
+          # 步骤 4：打包并做 SHA-256 校验（与 BUILD.md 步骤 4 同口径）。
+          (cd build/ci && jar cf spider.jar -C dexout classes.dex)
+          (cd build/ci && sha256sum spider.jar > spider.jar.sha256)
+          (cd build/ci && sha256sum -c spider.jar.sha256)
