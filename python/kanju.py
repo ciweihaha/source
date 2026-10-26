@@ -87,7 +87,7 @@ class _SameHostRedirectHandler(urllib.request.HTTPRedirectHandler):
         dest = urlparse(urljoin(req.full_url, newurl))
         if (dest.scheme or "").lower() != (origin.scheme or "").lower() or (dest.hostname or "").lower() != (origin.hostname or "").lower() or (int(dest.netloc.rsplit(":", 1)[1]) if ":" in dest.netloc and dest.netloc.rsplit(":", 1)[1].isdigit() else (443 if (dest.scheme or "").lower() == "https" else 80)) != (int(origin.netloc.rsplit(":", 1)[1]) if ":" in origin.netloc and origin.netloc.rsplit(":", 1)[1].isdigit() else (443 if (origin.scheme or "").lower() == "https" else 80)):
             return None
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+        return super().redirect_request(req, fp, code, msg, headers, urljoin(req.full_url, newurl))
 
 
 class Spider(BaseSpider):
