@@ -10,6 +10,9 @@
 var DEFAULT_HOST = "https://kanju.ai";
 var UA = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
 var PAGE_LIMIT = 20;
+var PIC_PROXY = "https://ysp.ciweihaha.win/agg?ac=img&u=";
+  function proxyPic(u) { u = String(u || ""); if (u.indexOf("http://") !== 0 && u.indexOf("https://") !== 0) return u; if (u.indexOf("/agg?ac=img&u=") >= 0) return u; try { return PIC_PROXY + encodeURIComponent(u); } catch (_) { return u; } }
+
 var MAX_LINE_TRIES = 5;
 
 var KINDS = [["", "全部"], ["movie", "电影"], ["series", "剧集"], ["short_drama", "短剧"],
@@ -265,7 +268,7 @@ export default function createSpider(site) {
       out.push({
         vod_id: String(c.id),
         vod_name: c.title || "",
-        vod_pic: c.poster_url || c.backdrop_url || "",
+        vod_pic: proxyPic(c.poster_url || c.backdrop_url || ""),
         vod_remarks: c.remarks || "",
         vod_year: String(c.year || ""),
         vod_area: c.area || "",
@@ -384,7 +387,7 @@ export default function createSpider(site) {
         list: [{
           vod_id: vid,
           vod_name: d.title || "",
-          vod_pic: d.poster_url || d.backdrop_url || "",
+          vod_pic: proxyPic(d.poster_url || d.backdrop_url || ""),
           vod_remarks: d.remarks || d.episode_progress_text || "",
           vod_year: String(d.year || ""),
           vod_area: d.area || "",
