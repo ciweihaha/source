@@ -1,0 +1,11 @@
+# Actions 自动更新（GitHub 全账户审计修复 GH-D1）：
+# 本仓库 Java 部分为手动编译（无包管理器清单），仅启用 github-actions 生态，
+# 把 CI 中已钉完整 SHA 的 actions/checkout 自动升到新版本。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
