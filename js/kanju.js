@@ -11,7 +11,55 @@ var DEFAULT_HOST = "https://kanju.ai";
 var UA = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
 var PAGE_LIMIT = 20;
 var PIC_PROXY = "https://ysp.ciweihaha.win/agg?ac=img&u=";
-  function proxyPic(u) { u = String(u || ""); if (u.indexOf("http://") !== 0 && u.indexOf("https://") !== 0) return u; if (u.indexOf("/agg?ac=img&u=") >= 0) return u; try { return PIC_PROXY + encodeURIComponent(u); } catch (_) { return u; } }
+  function proxyPic(u) {
+    // 仅对 http/https 做代理；其余 scheme、相对路径、空串一律原样返回（不代理）。
+    // 被拒的情形一律返回原值而非空串，避免 vod_pic 被清空导致海报位异常。
+    u = String(u || "").replace(/^\s+|\s+$/g, "");
+    if (u === "") return u;
+    var schemeEnd = u.indexOf("://");
+    if (schemeEnd <= 0) return u;
+    var scheme = u.slice(0, schemeEnd).toLowerCase();
+    if (scheme !== "http" && scheme !== "https") return u;
+    // 防重复代理：精确前缀判断。只有已以 PIC_PROXY 开头的才算已代理，
+    // 旧的子串包含判断会把图片地址中偶然含 "/agg?ac=img&u=" 的正常图误判为已代理。
+    if (u.indexOf(PIC_PROXY) === 0) return u;
+    // 字面量内网主机拦截：只看 URL 字面量主机，不做 DNS 解析。
+    // 域名解析后指向内网 IP 的情形仍靠 agg 服务端策略，本函数不声称已堵死 SSRF。
+    var rest = u.slice(schemeEnd + 3);
+    var hostPort = rest.split("/")[0].split("?")[0].split("#")[0];
+    var at = hostPort.lastIndexOf("@");
+    if (at >= 0) hostPort = hostPort.slice(at + 1);
+    var host = hostPort;
+    if (host.charAt(0) === "[") {
+      var close = host.indexOf("]");
+      host = close > 0 ? host.slice(1, close) : host.slice(1);
+    } else {
+      var firstColon = host.indexOf(":");
+      if (firstColon >= 0 && host.indexOf(":", firstColon + 1) < 0) host = host.slice(0, firstColon);
+    }
+    if (isPrivateLiteralHost(host.toLowerCase())) return u;
+    try { return PIC_PROXY + encodeURIComponent(u); } catch (_) { return u; }
+  }
+  function isPrivateLiteralHost(host) {
+    if (host === "localhost" || (host.length > 10 && host.slice(-10) === ".localhost")) return true;
+    if (host === "::1" || host === "0:0:0:0:0:0:0:1") return true;
+    var parts = host.split(".");
+    if (parts.length !== 4) return false;
+    var nums = [];
+    for (var i = 0; i < 4; i++) {
+      var p = parts[i];
+      if (p === "") return false;
+      for (var j = 0; j < p.length; j++) {
+        if (p.charAt(j) < "0" || p.charAt(j) > "9") return false;
+      }
+      nums.push(parseInt(p, 10));
+    }
+    if (nums[0] === 127) return true; // 127.0.0.0/8
+    if (nums[0] === 10) return true; // 10.0.0.0/8
+    if (nums[0] === 192 && nums[1] === 168) return true; // 192.168.0.0/16
+    if (nums[0] === 172 && nums[1] >= 16 && nums[1] <= 31) return true; // 172.16.0.0/12
+    return false;
+  }
 
 var MAX_LINE_TRIES = 5;
 
