@@ -43,17 +43,81 @@ var PIC_PROXY = "https://ysp.ciweihaha.win/agg?ac=img&u=";
   function isPrivateLiteralHost(host) {
     if (host === "localhost" || (host.length > 10 && host.slice(-10) === ".localhost")) return true;
     if (host === "::1" || host === "0:0:0:0:0:0:0:1") return true;
+    // 深查第 1 轮：旧实现只认 ::1 与展开式，0::1、::ffff:127.0.0.1、
+    // fe80::/10、fc00::/8 等 IPv6 混淆/私网形态都会漏网。
+    // 主机名本身不含冒号，含冒号即为 IPv6 字面量；命中时只返回原图
+    // （不走代理），不丢图，故公网 IPv6 图床也只是不代理，不会断图。
+    if (host.indexOf(":") >= 0) return true;
     var parts = host.split(".");
+    // 短形态 / 单整数 IPv4：127.1、10.1、2130706433（=127.0.0.1）等，
+    // 旧实现因 parts.length !== 4 直接返回 false，全部漏网。
+    // 仅当全部是十进制数字时才按 IP 处理，普通域名不受影响。
+    if (parts.length === 1 || parts.length === 2 || parts.length === 3) {
+      var allDigits = true;
+      for (var k = 0; k < parts.length; k++) {
+        if (parts[k] === "") { allDigits = false; break; }
+        for (var m = 0; m < parts[k].length; m++) {
+          if (parts[k].charAt(m) < "0" || parts[k].charAt(m) > "9") { allDigits = false; break; }
+        }
+        if (!allDigits) break;
+      }
+      if (!allDigits) return false;
+      if (parts.length === 1) {
+        var v = parseInt(parts[0], 10);
+        var a1 = Math.floor(v / 16777216) % 256;
+        var b1 = Math.floor(v / 65536) % 256;
+        if (a1 === 127 || a1 === 10 || a1 === 0) return true;
+        if (a1 === 192 && b1 === 168) return true;
+        if (a1 === 172 && b1 >= 16 && b1 <= 31) return true;
+        if (a1 === 169 && b1 === 254) return true;
+        return false;
+      }
+      var first = parseInt(parts[0], 10);
+      var second = parseInt(parts[1], 10);
+      if (first === 127 || first === 10 || first === 0) return true;
+      if (first === 192 && second === 168) return true;
+      if (first === 172 && second >= 16 && second <= 31) return true;
+      if (first === 169 && second === 254) return true;
+      return false;
+    }
     if (parts.length !== 4) return false;
-    var nums = [];
+    // 十六进制 / 八进制分量：0x7f.0.0.1、0177.0.0.1 等，旧实现因
+    // 非十进制字符直接返回 false。先解码再按范围判定，公网值仍放行。
+    var hasNonDecimal = false;
+    var decoded = [];
     for (var i = 0; i < 4; i++) {
       var p = parts[i];
       if (p === "") return false;
-      for (var j = 0; j < p.length; j++) {
-        if (p.charAt(j) < "0" || p.charAt(j) > "9") return false;
+      if (p.length > 2 && p.charAt(0) === "0" && (p.charAt(1) === "x" || p.charAt(1) === "X")) {
+        hasNonDecimal = true;
+        decoded.push(parseInt(p, 16));
+      } else if (p.length > 1 && p.charAt(0) === "0") {
+        var octalOk = true;
+        for (var j = 0; j < p.length; j++) {
+          if (p.charAt(j) < "0" || p.charAt(j) > "7") { octalOk = false; break; }
+        }
+        if (octalOk) { hasNonDecimal = true; decoded.push(parseInt(p, 8)); }
+        else {
+          for (var j2 = 0; j2 < p.length; j2++) {
+            if (p.charAt(j2) < "0" || p.charAt(j2) > "9") return false;
+          }
+          decoded.push(parseInt(p, 10));
+        }
+      } else {
+        for (var j3 = 0; j3 < p.length; j3++) {
+          if (p.charAt(j3) < "0" || p.charAt(j3) > "9") return false;
+        }
+        decoded.push(parseInt(p, 10));
       }
-      nums.push(parseInt(p, 10));
     }
+    if (hasNonDecimal) {
+      if (decoded[0] === 127 || decoded[0] === 10 || decoded[0] === 0) return true;
+      if (decoded[0] === 192 && decoded[1] === 168) return true;
+      if (decoded[0] === 172 && decoded[1] >= 16 && decoded[1] <= 31) return true;
+      if (decoded[0] === 169 && decoded[1] === 254) return true;
+      return false;
+    }
+    var nums = decoded;
     if (nums[0] === 127) return true; // 127.0.0.0/8
     if (nums[0] === 10) return true; // 10.0.0.0/8
     if (nums[0] === 192 && nums[1] === 168) return true; // 192.168.0.0/16
