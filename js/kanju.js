@@ -58,6 +58,10 @@ var PIC_PROXY = "https://ysp.ciweihaha.win/agg?ac=img&u=";
     if (nums[0] === 10) return true; // 10.0.0.0/8
     if (nums[0] === 192 && nums[1] === 168) return true; // 192.168.0.0/16
     if (nums[0] === 172 && nums[1] >= 16 && nums[1] <= 31) return true; // 172.16.0.0/12
+    // 2026-11-05 第 2 轮补缺：0.0.0.0/8（未指定地址）与 169.254.0.0/16（链路本地段，
+    // 含云元数据常用地址）此前未拦，补上后一律原样返回、不送图床代理；正常公网图床不受影响。
+    if (nums[0] === 0) return true; // 0.0.0.0/8
+    if (nums[0] === 169 && nums[1] === 254) return true; // 169.254.0.0/16
     return false;
   }
 
