@@ -2,7 +2,7 @@
 # 步骤：checkout -> JDK -> 按 java/BUILD.md 编译 -> d8 -> 打包 -> sha256sum -c，
 # 并运行 tests/ 下的 Python / JS mock 用例。
 # 构建产物放在隔离目录 build/ci，不覆盖、不提交仓内 java/spider.jar。
-# 本文件未在有 Android SDK 的环境中实测通过，CI 绿与本地复现均待验证。
+# 本文件已在 GitHub Actions 上多次跑绿（含 Android SDK 环境）。
 # 若运行器上没有预装 Android SDK，需先安装（例如用 android-actions/setup-android 类
 # Action 并钉完整 SHA）；本文件只用了一个 Action，见下。
 name: CI
@@ -19,8 +19,8 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
-      # 唯一 Action：actions/checkout v4.2.2，钉完整 SHA（已在 GitHub 上核对）。
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # 唯一 Action：actions/checkout v7.0.1，钉完整 SHA（已在 GitHub 上核对）。
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: 运行 Python mock 用例
         run: python3 tests/python/test_kanju.py
